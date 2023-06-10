@@ -18,6 +18,20 @@ class TaggerInterrogateRequest(sd_models.InterrogateRequest):
         le=1
     )
 
+class TaggerInterrogateCombineRequest(sd_models.InterrogateRequest):
+    model: str = Field(
+        title='Model',
+        description='The interrogate model used.'
+    )
+
+    threshold: float = Field(
+        default=0.35,
+        title='Threshold',
+        description='',
+        ge=0,
+        le=1
+    )
+
 
 class TaggerInterrogateResponse(BaseModel):
     caption: Dict[str, float] = Field(
@@ -25,6 +39,11 @@ class TaggerInterrogateResponse(BaseModel):
         description='The generated caption for the image.'
     )
 
+class TaggerInterrogateCombineResponse(BaseModel):
+    caption: Dict[str, float] = Field(
+        title='Caption',
+        description='The generated caption for the image.'
+    )
 
 class InterrogatorsResponse(BaseModel):
     models: List[str] = Field(

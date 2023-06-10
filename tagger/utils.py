@@ -6,12 +6,14 @@ from pathlib import Path
 from modules import shared, scripts
 from preload import default_ddp_path
 from tagger.preset import Preset
-from tagger.interrogator import Interrogator, DeepDanbooruInterrogator, WaifuDiffusionInterrogator
+from tagger.interrogator import Interrogator, DeepDanbooruInterrogator, WaifuDiffusionInterrogator, Interrogator_clip
 
 preset = Preset(Path(scripts.basedir(), 'presets'))
 
 interrogators: Dict[str, Interrogator] = {}
 
+def Interrogator_clip_image_to_prompt(image):
+    return Interrogator_clip.image_to_prompt(image, 'fast', 'ViT-L-14/openai')
 
 def refresh_interrogators() -> List[str]:
     global interrogators

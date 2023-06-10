@@ -13,6 +13,15 @@ from huggingface_hub import hf_hub_download
 from modules import shared
 from modules.deepbooru import re_special as tag_escape_pattern
 
+import clip_interrogator
+from clip_interrogator import Config as clip_Config_, Interrogator as clip_Interrogator_
+import torch
+
+from modules import devices, lowvram, script_callbacks, shared
+
+ci = None
+low_vram = False
+
 # i'm not sure if it's okay to add this file to the repository
 from . import dbimutils
 
@@ -31,6 +40,74 @@ else:
         except ValueError:
             print('--device-id is not a integer')
 
+
+class Interrogator_clip:
+    @staticmethod
+    def clip_load(clip_model_name):
+        global ci
+        if ci is None:
+            print(f"Loading CLIP Interrogator {clip_interrogator.__version__}...")
+
+            config = clip_Config_(
+                device=devices.get_optimal_device(), 
+                cache_path = 'models/clip-interrogator',
+                clip_model_name=clip_model_name,
+                blip_model=shared.interrogator.load_blip_model().float()
+            )
+            if low_vram:
+                config.apply_low_vram_defaults()
+            ci = clip_Interrogator_(config)
+
+        if clip_model_name != ci.config.clip_model_name:
+            ci.config.clip_model_name = clip_model_name
+            ci.load_clip_model()
+
+    def clip_unload():
+        global ci
+        if ci is not None:
+            print("Offloading CLIP Interrogator...")
+            ci.blip_model = ci.blip_model.to(devices.cpu)
+            ci.clip_model = ci.clip_model.to(devices.cpu)
+            ci.blip_offloaded = True
+            ci.clip_offloaded = True
+            devices.torch_gc()
+    @staticmethod
+    def interrogateClip(image, mode, caption=None):
+        if mode == 'best':
+            prompt = ci.interrogate(image, caption=caption)
+        elif mode == 'caption':
+            prompt = ci.generate_caption(image) if caption is None else caption
+        elif mode == 'classic':
+            prompt = ci.interrogate_classic(image, caption=caption)
+        elif mode == 'fast':
+            prompt = ci.interrogate_fast(image, caption=caption)
+        elif mode == 'negative':
+            prompt = ci.interrogate_negative(image)
+        else:
+            raise Exception(f"Unknown mode {mode}")
+        return prompt
+    @staticmethod
+    def image_to_prompt(image, mode, clip_model_name):
+        shared.state.begin()
+        shared.state.job = 'interrogate'
+
+        try: 
+            if shared.cmd_opts.lowvram or shared.cmd_opts.medvram:
+                lowvram.send_everything_to_cpu()
+                devices.torch_gc()
+
+            Interrogator_clip.clip_load(clip_model_name)
+            image = image.convert('RGB')
+            prompt = Interrogator_clip.interrogateClip(image, mode)
+        except torch.cuda.OutOfMemoryError as e:
+            prompt = "Ran out of VRAM"
+            print(e)
+        except RuntimeError as e:
+            prompt = f"Exception {type(e)}"
+            print(e)
+
+        shared.state.end()
+        return prompt
 
 class Interrogator:
     @staticmethod

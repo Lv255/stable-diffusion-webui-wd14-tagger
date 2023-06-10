@@ -32,6 +32,13 @@ class Api:
         )
 
         self.add_api_route(
+            'interrogate_combine',
+            self.endpoint_interrogate_combine,
+            methods=['POST'],
+            response_model=models.TaggerInterrogateCombineResponse
+        )
+
+        self.add_api_route(
             'interrogators',
             self.endpoint_interrogators,
             methods=['GET'],
@@ -72,6 +79,32 @@ class Api:
             ratings, tags = interrogator.interrogate(image)
 
         return models.TaggerInterrogateResponse(
+            caption={
+                **ratings,
+                **interrogator.postprocess_tags(
+                    tags,
+                    req.threshold
+                )
+            })
+
+    def endpoint_interrogate_combine(self, req: models.TaggerInterrogateCombineRequest):
+        if req.image is None:
+            raise HTTPException(404, 'Image not found')
+
+        if req.model not in utils.interrogators.keys():
+            raise HTTPException(404, 'Model not found')
+
+        image = decode_base64_to_image(req.image)
+        interrogator = utils.interrogators[req.model]
+
+        with self.queue_lock:
+            ratings, tags = interrogator.interrogate(image)
+            clip_prompt = utils.Interrogator_clip_image_to_prompt(image)
+            clip_tags = [s.strip() for s in clip_prompt.split(',') if s.strip()]
+            clip_tags = {tag: 1.0 for tag in clip_tags}
+            tags = {**clip_tags, **tags}
+
+        return models.TaggerInterrogateCombineResponse(
             caption={
                 **ratings,
                 **interrogator.postprocess_tags(

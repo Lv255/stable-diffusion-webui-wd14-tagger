@@ -14,7 +14,7 @@ from modules import generation_parameters_copypaste as parameters_copypaste
 from tagger import format, utils
 from tagger.utils import split_str
 from tagger.interrogator import Interrogator
-
+from tagger.interrogator import Interrogator_clip
 
 def unload_interrogators():
     unloaded_models = 0
@@ -28,8 +28,10 @@ def unload_interrogators():
 
 def on_interrogate(
     image: Image,
+    single_append_clip_tags: str,
     batch_input_glob: str,
     batch_input_recursive: bool,
+    batch_append_clip_tags: str,
     batch_output_dir: str,
     batch_output_filename_format: str,
     batch_output_action_on_conflict: str,
@@ -66,6 +68,10 @@ def on_interrogate(
 
     # single process
     if image is not None:
+        clip_tags = ''
+        if single_append_clip_tags != 'None':
+            Interrogator_clip.clip_load('ViT-L-14/openai')
+            clip_tags = Interrogator_clip.image_to_prompt(image, 'fast', 'ViT-L-14/openai')
         ratings, tags = interrogator.interrogate(image)
         processed_tags = Interrogator.postprocess_tags(
             tags,
@@ -75,8 +81,13 @@ def on_interrogate(
         if unload_model_after_running:
             interrogator.unload()
 
+        combined_tags = ', '.join(processed_tags)
+        if single_append_clip_tags == 'Add to Front':
+            combined_tags = clip_tags + ', ' + combined_tags
+        elif single_append_clip_tags == 'Add to End':
+            combined_tags = combined_tags + ', ' + clip_tags
         return [
-            ', '.join(processed_tags),
+            combined_tags,
             ratings,
             tags,
             ''
@@ -117,6 +128,9 @@ def on_interrogate(
         ]
 
         print(f'found {len(paths)} image(s)')
+
+        if len(paths) > 0 and batch_append_clip_tags != 'None':
+            Interrogator_clip.clip_load('ViT-L-14/openai')
 
         for path in paths:
             try:
@@ -173,6 +187,13 @@ def on_interrogate(
 
             plain_tags = ', '.join(processed_tags)
 
+            clip_tags = Interrogator_clip.image_to_prompt(image, 'fast', 'ViT-L-14/openai')
+
+            if batch_append_clip_tags == 'Add to Front':
+                plain_tags = clip_tags + ', ' + plain_tags
+            elif batch_append_clip_tags == 'Add to End':
+                plain_tags = plain_tags + ', ' + clip_tags
+
             if batch_output_action_on_conflict == 'copy':
                 output = [plain_tags]
             elif batch_output_action_on_conflict == 'prepend':
@@ -222,6 +243,16 @@ def on_ui_tabs():
                             interactive=True,
                             type="pil"
                         )
+                        single_append_clip_tags = utils.preset.component(
+                            gr.Dropdown,
+                            label='Add Clip Interrogator Tags - Single',
+                            value='None',
+                            choices=[
+                                'Add to End',
+                                'Add to Front',
+                                'None',
+                            ]
+                        )
 
                     with gr.TabItem(label='Batch from directory'):
                         batch_input_glob = utils.preset.component(
@@ -232,6 +263,17 @@ def on_ui_tabs():
                         batch_input_recursive = utils.preset.component(
                             gr.Checkbox,
                             label='Use recursive with glob pattern'
+                        )
+
+                        batch_append_clip_tags = utils.preset.component(
+                            gr.Dropdown,
+                            label='Add Clip Interrogator Tags - Batch',
+                            value='Add to Front',
+                            choices=[
+                                'Add to Front',
+                                'Add to End',
+                                'None',
+                            ]
                         )
 
                         batch_output_dir = utils.preset.component(
@@ -448,10 +490,12 @@ def on_ui_tabs():
                 inputs=[
                     # single process
                     image,
+                    single_append_clip_tags,
 
                     # batch process
                     batch_input_glob,
                     batch_input_recursive,
+                    batch_append_clip_tags,
                     batch_output_dir,
                     batch_output_filename_format,
                     batch_output_action_on_conflict,
